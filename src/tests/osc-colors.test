@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Exercise real Mosh binaries with a PTY standing in for the local emulator."""
+import errno
+import fcntl
+import json
+import os
+from pathlib import Path
+import pty
+import select
+import signal
+import struct
+import subprocess
+import sys
+import tempfile
+import termios
+import time
+import tty
+
+FG = b"\x1b]10;rgb:ebeb/dbdb/b2b2\x1b\\"
+BG = b"\x1b]11;rgb:2828/2828/2828\x1b\\"
+LIGHT = b"\x1b]11;rgb:ffff/ffff/ffff\x1b\\"
+PASTE = b"typed:" + "世界".encode() + b"\x1b[200~\x1b]10;rgb:f/f/f\x07\x1b[201~:end"
+
+
+def receive(fd, duration, done):
+    data = b""
+    deadline = time.monotonic() + duration
+    while time.monotonic() < deadline and not done(data):
+        if select.select([fd], [], [], max(0, deadline - time.monotonic()))[0]:
+            data += os.read(fd, 4096)
+    return data
+
+
+def remote(mode, result):
+    fd = os.open('/dev/tty', os.O_RDWR)
+    saved = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        Path(result + '.ready').touch()
+        os.write(fd, b'\x1b]10;?\x1b\\\x1b]11;?\x07')
+        payload = PASTE if mode == 'supported' else b'typed:unsupported:end'
+        data = receive(fd, 3 if mode == 'supported' else 0.7,
+                       lambda d: payload in d and FG in d and BG in d)
+        assert payload in data, ('lost input', data)
+        if mode == 'supported':
+            assert FG in data and BG in data, ('missing colors', data)
+            assert data.index(payload) < data.index(FG), ('input blocked behind color detection', data)
+            Path(result + '.stage1').touch()
+            time.sleep(5.3)
+            os.write(fd, b'\x1b]11;?\x1b\\')
+            changed = receive(fd, 2, lambda d: LIGHT in d)
+            assert LIGHT in changed, ('theme change not propagated', changed)
+        else:
+            assert b'rgb:' not in data, ('unexpected color reply', data)
+            if mode == 'legacy':
+                Path(result + '.stage1').touch()
+                later = receive(fd, 2, lambda d: b'after-color-update' in d)
+                assert b'after-color-update' in later, ('input after metadata update failed', later)
+        Path(result).write_text(json.dumps({'mode': mode, 'ok': True}))
+    except BaseException as exc:
+        Path(result).write_text(json.dumps({'mode': mode, 'error': repr(exc)}))
+        raise
+    finally:
+        termios.tcsetattr(fd, termios.TCSANOW, saved)
+        os.close(fd)
+
+
+def run(mode):
+    source = Path(__file__).resolve()
+    build = Path.cwd()
+    client = os.environ.get('OSC_TEST_CLIENT', str(build / '../frontend/mosh-client'))
+    server = os.environ.get('OSC_TEST_SERVER', str(build / '../frontend/mosh-server'))
+    launcher = str(build / '../../scripts/mosh')
+    with tempfile.TemporaryDirectory(prefix='mosh-osc-') as tmp:
+        result = tmp + '/result'
+        pid, fd = pty.fork()
+        if pid == 0:
+            os.environ['TERM'] = 'xterm-256color'
+            fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack('HHHH', 24, 80, 0, 0))
+            os.execv(launcher, [launcher, '--local', '--bind-server=127.0.0.1',
+                               '--predict=never', '--client=' + client, '--server=' + server,
+                               '--', '127.0.0.1', sys.executable, str(source), '--remote', mode, result])
+        output = b''
+        scan = b''
+        events = []
+        sent_input = False
+        sent_later = False
+        status = None
+        deadline = time.monotonic() + 16
+        try:
+            while time.monotonic() < deadline:
+                now = time.monotonic()
+                if not sent_input and Path(result + '.ready').exists():
+                    os.write(fd, PASTE if mode == 'supported' else b'typed:unsupported:end')
+                    sent_input = True
+                if mode == 'legacy' and not sent_later and Path(result + '.stage1').exists():
+                    os.write(fd, b'after-color-update')
+                    sent_later = True
+                for when, data in events[:]:
+                    if when <= now:
+                        os.write(fd, data)
+                        events.remove((when, data))
+                if select.select([fd], [], [], 0.01)[0]:
+                    try:
+                        chunk = os.read(fd, 65536)
+                    except OSError as exc:
+                        if exc.errno == errno.EIO:
+                            break
+                        raise
+                    if not chunk:
+                        break
+                    output += chunk
+                    scan += chunk
+                    while b'\x1b]11;?\x1b\\' in scan:
+                        _, scan = scan.split(b'\x1b]11;?\x1b\\', 1)
+                        if mode in ('supported', 'legacy'):
+                            # Fragment ST foreground and BEL background replies, after normal typing.
+                            background = LIGHT if Path(result + '.stage1').exists() else BG
+                            reply = FG + background[:-2] + b'\x07'
+                            events.extend([(now + 0.25, reply[:7]), (now + 0.26, reply[7:])])
+                child, status = os.waitpid(pid, os.WNOHANG)
+                if child:
+                    break
+            else:
+                raise AssertionError('Mosh did not exit')
+            if status is None or not os.WIFEXITED(status):
+                _, status = os.waitpid(pid, 0)
+            assert os.waitstatus_to_exitcode(status) == 0, output[-4000:]
+            assert Path(result).exists(), output[-4000:]
+            report = json.loads(Path(result).read_text())
+            assert report.get('ok'), report
+            print('PASS real client/server:', mode)
+        finally:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            os.close(fd)
+
+
+if __name__ == '__main__':
+    if len(sys.argv) > 1 and sys.argv[1] == '--remote':
+        remote(sys.argv[2], sys.argv[3])
+    else:
+        run('supported')
+        run('unsupported')

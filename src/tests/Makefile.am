@@ -1,5 +1,5 @@
 EXTRA_DIST = \
-	hold-stdin print-exitstatus \
+	hold-stdin print-exitstatus osc-colors.test \
 	e2e-test e2e-test-server \
 	e2e-test-subrs \
 	mosh-client mosh-server \
@@ -38,8 +38,8 @@ displaytests = \
 	unicode-later-combining.test \
 	window-resize.test
 
-check_PROGRAMS = ocb-aes encrypt-decrypt base64 nonce-incr inpty is-utf8-locale
-TESTS = ocb-aes encrypt-decrypt base64 nonce-incr local.test $(displaytests)
+check_PROGRAMS = terminal-osc-default-colors ocb-aes encrypt-decrypt base64 nonce-incr inpty is-utf8-locale
+TESTS = terminal-osc-default-colors osc-colors.test ocb-aes encrypt-decrypt base64 nonce-incr local.test $(displaytests)
 XFAIL_TESTS = \
 	e2e-failure.test \
 	emulation-attributes-256color8.test
@@ -78,3 +78,7 @@ clean-local-check:
 	-for i in $(displaytests); do rm -rf $$i.d/; done
 
 CLEANFILES = base64_vector.cc
+
+terminal_osc_default_colors_SOURCES = terminal-osc-default-colors.cc
+terminal_osc_default_colors_CPPFLAGS = -I$(top_srcdir) $(protobuf_CFLAGS)
+terminal_osc_default_colors_LDADD = ../statesync/libmoshstatesync.a ../terminal/libmoshterminal.a ../protobufs/libmoshprotos.a ../util/libmoshutil.a $(protobuf_LIBS) $(TINFO_LIBS)

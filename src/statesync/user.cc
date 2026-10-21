@@ -84,6 +84,11 @@ std::string UserStream::diff_from( const UserStream& existing ) const
           new_inst->MutableExtension( keystroke )->set_keys( &the_byte, 1 );
         }
       } break;
+      case DefaultColorType: {
+        auto* color = output.add_instruction()->MutableExtension( default_color );
+        color->set_slot( my_it->default_color.slot );
+        color->set_color( my_it->default_color.color );
+      } break;
       case ResizeType: {
         Instruction* new_inst = output.add_instruction();
         new_inst->MutableExtension( resize )->set_width( my_it->resize.width );
@@ -111,6 +116,9 @@ void UserStream::apply_string( const std::string& diff )
       for ( unsigned int loc = 0; loc < the_bytes.size(); loc++ ) {
         actions.push_back( UserEvent( UserByte( the_bytes.at( loc ) ) ) );
       }
+    } else if ( input.instruction( i ).HasExtension( default_color ) ) {
+      const auto& color = input.instruction( i ).GetExtension( default_color );
+      actions.push_back( UserEvent( DefaultColor( color.slot(), color.color() ) ) );
     } else if ( input.instruction( i ).HasExtension( resize ) ) {
       actions.push_back( UserEvent( Resize( input.instruction( i ).GetExtension( resize ).width(),
                                             input.instruction( i ).GetExtension( resize ).height() ) ) );
@@ -123,6 +131,8 @@ const Parser::Action& UserStream::get_action( unsigned int i ) const
   switch ( actions[i].type ) {
     case UserByteType:
       return actions[i].userbyte;
+    case DefaultColorType:
+      return actions[i].default_color;
     case ResizeType:
       return actions[i].resize;
     default:

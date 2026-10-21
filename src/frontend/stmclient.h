@@ -40,6 +40,7 @@
 #include <termios.h>
 
 #include "src/frontend/terminaloverlay.h"
+#include "src/terminal/terminalcolors.h"
 #include "src/network/networktransport.h"
 #include "src/statesync/completeterminal.h"
 #include "src/statesync/user.h"
@@ -77,6 +78,10 @@ private:
   void main_init( void );
   void process_network_input( void );
   bool process_user_input( int fd );
+  bool process_user_bytes( const std::string& bytes );
+  Terminal::ColorReplyParser color_replies;
+  std::string default_colors[2];
+  uint64_t next_color_query = 0;
   bool process_resize( void );
 
   void output_new_frame( void );

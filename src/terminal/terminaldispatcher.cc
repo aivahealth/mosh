@@ -39,6 +39,7 @@
 #include "src/terminal/parseraction.h"
 #include "src/terminal/terminalframebuffer.h"
 #include "terminaldispatcher.h"
+#include "terminalcolors.h"
 
 using namespace Terminal;
 
@@ -47,6 +48,31 @@ static const size_t MAXIMUM_CLIPBOARD_SIZE = 16 * 1024;
 Dispatcher::Dispatcher()
   : params(), parsed_params(), parsed( false ), dispatch_chars(), OSC_string(), terminal_to_host()
 {}
+
+void Dispatcher::answer_default_color_query( unsigned int slot )
+{
+  if ( default_colors[slot - 10].empty() ) {
+    // Bound queries arriving before the client's first color report.
+    if ( pending_color_queries[slot - 10] < 16 ) {
+      pending_color_queries[slot - 10]++;
+    }
+    return;
+  }
+  terminal_to_host += slot == 10 ? "\033]10;rgb:" : "\033]11;rgb:";
+  terminal_to_host += default_colors[slot - 10] + "\033\\";
+}
+
+void Dispatcher::set_default_color( unsigned int slot, const std::string& color )
+{
+  if ( ( slot != 10 && slot != 11 ) || !valid_default_color( color ) ) {
+    return;
+  }
+  default_colors[slot - 10] = color;
+  while ( pending_color_queries[slot - 10] > 0 ) {
+    pending_color_queries[slot - 10]--;
+    answer_default_color_query( slot );
+  }
+}
 
 void Dispatcher::newparamchar( const Parser::Param* act )
 {
@@ -272,5 +298,8 @@ bool Dispatcher::operator==( const Dispatcher& x ) const
 {
   return ( params == x.params ) && ( parsed_params == x.parsed_params ) && ( parsed == x.parsed )
          && ( dispatch_chars == x.dispatch_chars ) && ( OSC_string == x.OSC_string )
+         && ( default_colors[0] == x.default_colors[0] ) && ( default_colors[1] == x.default_colors[1] )
+         && ( pending_color_queries[0] == x.pending_color_queries[0] )
+         && ( pending_color_queries[1] == x.pending_color_queries[1] )
          && ( terminal_to_host == x.terminal_to_host );
 }

@@ -157,6 +157,19 @@ public:
   bool operator==( const UserByte& other ) const { return c == other.c; }
 };
 
+class DefaultColor : public Action
+{
+public:
+  unsigned int slot;
+  std::string color;
+
+  DefaultColor( unsigned int s_slot = 0, const std::string& s_color = std::string() )
+    : slot( s_slot ), color( s_color ) {}
+  std::string name( void ) { return std::string( "DefaultColor" ); }
+  void act_on_terminal( Terminal::Emulator* emu ) const;
+  bool operator==( const DefaultColor& other ) const { return slot == other.slot && color == other.color; }
+};
+
 class Resize : public Action
 {
   /* resize event -- not part of the host-source state machine*/

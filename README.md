@@ -87,6 +87,89 @@ Usage
   There are [more examples](https://mosh.org/#usage) and a
   [FAQ](https://mosh.org/#faq) on the Mosh web site.
 
+Default foreground/background queries in this fork
+---------------------------------------------------
+
+This fork supports OSC 10/11 queries, including BEL and ST terminators.
+`mosh-client` queries the local terminal asynchronously at connection startup,
+after resume, and every five seconds. Valid RGB replies (one to four hex digits
+per component) travel as an optional user-input protocol extension. The server
+caches those values and answers application queries locally, without an extra
+network round trip. This follows the cached-response approach proposed in
+[Mosh PR #1394](https://github.com/mobile-shell/mosh/pull/1394), with asynchronous
+client probing in place of the launcher's synchronous startup probe.
+
+Both binaries must be rebuilt: the client on macOS and the server on Linux.
+The Perl launcher is unchanged. Old clients and servers still interoperate;
+they provide no default-color replies. No transport version bump is needed.
+The existing Unicode, clipboard, terminal rendering, and agent-forwarding
+patches remain in place.
+
+Unsupported terminals produce no color response. Missing replies never stop
+typing or rendering; incomplete input escape prefixes expire after 50 ms.
+Ordinary keys and complete non-color escape sequences pass through immediately,
+and bracketed paste contents are preserved. At most 16 early queries per color
+are held until the first valid color report. Theme changes are detected on the
+next five-second probe; an application that caches its startup colors, such as
+Codex, may need restarting after a theme change. OSC color-setting commands and
+indexed palette queries (OSC 4) are outside this implementation.
+
+Build on Linux without replacing the installed binaries:
+
+```sh
+cd ~/Development/mosh
+make -j4
+make -j4 check
+```
+
+For a separate macOS checkout, run these commands in Ghostty. This clones the
+committed Linux fork, including its previous patches, without publishing it or
+replacing another checkout. Homebrew dependencies are installed only if needed.
+Use the compiler and libraries from the same Homebrew Protobuf installation;
+configure checks that their versions match.
+
+```sh
+brew install autoconf automake pkgconf protobuf openssl@3 ncurses tmux
+export PATH="$(brew --prefix protobuf)/bin:$PATH"
+export PKG_CONFIG_PATH="$(brew --prefix protobuf)/lib/pkgconfig:$(brew --prefix openssl@3)/lib/pkgconfig:$(brew --prefix ncurses)/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+git clone --branch patched joe-dev:Development/mosh ~/Development/mosh-osc-colors
+cd ~/Development/mosh-osc-colors
+./autogen.sh
+./configure --prefix="$HOME/.local/mosh-osc-colors"
+make -j"$(sysctl -n hw.ncpu)"
+make -C src/tests check TESTS='terminal-osc-default-colors osc-colors.test'
+./scripts/mosh --client="$PWD/src/frontend/mosh-client" --server=/home/jtoscano42/Development/mosh/src/frontend/mosh-server joe-dev
+```
+
+The last command explicitly selects both new binaries. It starts a new session;
+existing sessions continue using their original binaries. No `make install` is
+required. To stop using the patch, exit that session and reconnect with the
+usual Mosh command. macOS compilation and Ghostty's visual result must be
+validated on the Mac; the Linux test uses a simulated local terminal.
+
+Inside the new Mosh session, run:
+
+```sh
+python3 ~/Development/mosh/scripts/osc-color-probe.py
+codex
+```
+
+The probe should report both real terminal colors (the original Ghostty sample
+was foreground `rgb:ebeb/dbdb/b2b2`, background `rgb:2828/2828/2828`). Compare the
+same probe and a freshly launched Codex through ordinary SSH. The final visual
+check is that Codex's composer has the same shaded background in both sessions.
+For a light/dark theme change, wait at least five seconds, rerun the probe,
+and restart Codex if needed. Colors are discovered, never hardcoded.
+
+The regression tests include byte-fragmented ST/BEL replies, malformed and
+missing responses, Unicode typing, bracketed paste, bounded early queries,
+protocol serialization, and a real client/server UDP session with delayed
+replies and a theme change. The PTY test requires Python 3. Run it with:
+
+```sh
+make -C src/tests check TESTS='terminal-osc-default-colors osc-colors.test'
+```
+
 How it works
 ------------
 

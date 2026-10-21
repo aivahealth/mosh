@@ -78,6 +78,7 @@ void STMClient::resume( void )
 
   /* Flag that outer terminal state is unknown */
   repaint_requested = true;
+  next_color_query = 0;
 }
 
 void STMClient::init( void )
@@ -322,6 +323,18 @@ bool STMClient::process_user_input( int fd )
     return false;
   }
 
+  std::string bytes = color_replies.feed( std::string( buf, bytes_read ), timestamp() );
+  for ( const auto& color : color_replies.updates ) {
+    if ( default_colors[color.slot - 10] != color.color ) {
+      default_colors[color.slot - 10] = color.color;
+      network->get_current_state().push_back( Parser::DefaultColor( color.slot, color.color ) );
+    }
+  }
+  return bytes.empty() || process_user_bytes( bytes );
+}
+
+bool STMClient::process_user_bytes( const std::string& bytes )
+{
   NetworkType& net = *network;
 
   if ( net.shutdown_in_progress() ) {
@@ -330,13 +343,12 @@ bool STMClient::process_user_input( int fd )
   overlays.get_prediction_engine().set_local_frame_sent( net.get_sent_state_last() );
 
   /* Don't predict for bulk data. */
-  bool paste = bytes_read > 100;
+  bool paste = bytes.size() > 100;
   if ( paste ) {
     overlays.get_prediction_engine().reset();
   }
 
-  for ( int i = 0; i < bytes_read; i++ ) {
-    char the_byte = buf[i];
+  for ( char the_byte : bytes ) {
 
     if ( !paste ) {
       overlays.get_prediction_engine().new_user_byte( the_byte, local_framebuffer );
@@ -454,9 +466,22 @@ bool STMClient::main( void )
 
   while ( 1 ) {
     try {
+      uint64_t now = timestamp();
+      if ( now >= next_color_query && !network->shutdown_in_progress() ) {
+        swrite( STDOUT_FILENO, "\033]10;?\033\\\033]11;?\033\\" );
+        next_color_query = now + 5000;
+      }
+      const std::string expired_input = color_replies.expire( now );
+      if ( !expired_input.empty() && !process_user_bytes( expired_input ) ) {
+        return false;
+      }
       output_new_frame();
 
       int wait_time = std::min( network->wait_time(), overlays.wait_time() );
+      wait_time = std::min( wait_time, color_replies.wait_time( now ) );
+      if ( !network->shutdown_in_progress() ) {
+        wait_time = std::min( wait_time, int( next_color_query > now ? next_color_query - now : 0 ) );
+      }
 
       /* Handle startup "Connecting..." message */
       if ( still_connecting() ) {

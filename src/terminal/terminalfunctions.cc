@@ -655,6 +655,15 @@ static Function func_CSI_DECSTR( CSI, "!p", CSI_DECSTR );
 /* xterm uses an Operating System Command to set the window title */
 void Dispatcher::OSC_dispatch( const Parser::OSC_End* act __attribute( ( unused ) ), Framebuffer* fb )
 {
+  if ( OSC_string == std::vector<wchar_t>( { L'1', L'0', L';', L'?' } ) ) {
+    answer_default_color_query( 10 );
+    return;
+  }
+  if ( OSC_string == std::vector<wchar_t>( { L'1', L'1', L';', L'?' } ) ) {
+    answer_default_color_query( 11 );
+    return;
+  }
+
   /* Handle OSC copy clipboard sequence 52;c; and variants */
   if ( OSC_string.size() >= 5 && OSC_string[0] == L'5' && OSC_string[1] == L'2' && OSC_string[2] == L';' ) {
     /* Capture the options and clipboard contents

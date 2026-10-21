@@ -108,6 +108,9 @@ private:
   std::string dispatch_chars;
   std::vector<wchar_t> OSC_string; /* only used to set the window title */
 
+  std::string default_colors[2];
+  unsigned int pending_color_queries[2] = { 0, 0 };
+
   void parse_params( void );
 
 public:
@@ -117,6 +120,8 @@ public:
   std::string terminal_to_host; /* this is the reply string */
 
   Dispatcher();
+  void set_default_color( unsigned int slot, const std::string& color );
+  void answer_default_color_query( unsigned int slot );
   int getparam( size_t N, int defaultval );
   Param const& getparamext( size_t N, int defaultval );
   int param_count( void );

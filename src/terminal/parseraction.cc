@@ -93,6 +93,11 @@ void UserByte::act_on_terminal( Terminal::Emulator* emu ) const
   emu->dispatch.terminal_to_host.append( emu->user.input( this, emu->fb.ds.application_mode_cursor_keys ) );
 }
 
+void DefaultColor::act_on_terminal( Terminal::Emulator* emu ) const
+{
+  emu->dispatch.set_default_color( slot, color );
+}
+
 void Resize::act_on_terminal( Terminal::Emulator* emu ) const
 {
   emu->resize( width, height );

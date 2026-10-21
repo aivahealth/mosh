@@ -8,3 +8,5 @@
 /*.d/
 *.log
 *.trs
+
+/terminal-osc-default-colors

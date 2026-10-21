@@ -60,6 +60,7 @@ class Emulator
 
   friend void Parser::UserByte::act_on_terminal( Emulator* ) const;
   friend void Parser::Resize::act_on_terminal( Emulator* ) const;
+  friend void Parser::DefaultColor::act_on_terminal( Emulator* ) const;
 
 private:
   Framebuffer fb;

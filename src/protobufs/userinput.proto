@@ -21,7 +21,13 @@ message ResizeMessage {
   optional int32 height = 6;
 }
 
+message DefaultColorMessage {
+  optional uint32 slot = 1;
+  optional string color = 2;
+}
+
 extend Instruction {
   optional Keystroke keystroke = 2;
   optional ResizeMessage resize = 3;
+  optional DefaultColorMessage default_color = 7;
 }
